@@ -19,3 +19,6 @@ go.work
 
 # VS Code local settings and workspace data
 .vscode/
+
+# just an example
+messages.txt
