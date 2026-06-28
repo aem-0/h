@@ -8,25 +8,22 @@ import (
 
 func isToken(str []byte) bool {
 	for _, ch := range str {
-		found := false
-		if ch >= 'A' && ch <= 'Z' ||
-			ch >= 'a' && ch <= 'z' ||
-			ch >= '0' && ch <= '9' {
-			found = true
-		}
-		switch ch {
-		case '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~':
-			found = true
-		}
-
-		if !found {
+		switch {
+		case ch >= 'A' && ch <= 'Z', ch >= 'a' && ch <= 'z', ch >= '0' && ch <= '9':
+			continue
+		case ch == '#', ch == '$', ch == '%', ch == '&', ch == '\'', ch == '*',
+			ch == '+', ch == '-', ch == '.', ch == '^', ch == '_', ch == '`',
+			ch == '|', ch == '~':
+			continue
+		default:
 			return false
 		}
+
 	}
 	return true
 }
 
-var rn = []byte("/r/n")
+var rn = []byte("\r\n")
 
 func parseHeader(fieldLine []byte) (string, string, error) {
 	parts := bytes.SplitN(fieldLine, []byte(":"), 2)
@@ -53,8 +50,19 @@ func NewHeaders() *Headers {
 	}
 }
 
-func (h *Headers) Get(name string) string {
-	return h.headers[strings.ToLower(name)]
+func (h *Headers) Get(name string) (string, bool) {
+	str, ok := h.headers[strings.ToLower(name)]
+	return str, ok
+}
+
+func (h *Headers) Replace(name, value string) {
+	name = strings.ToLower(name)
+	h.headers[name] = value
+}
+
+func (h *Headers) Delete(name string) {
+	name = strings.ToLower(name)
+	delete(h.headers, name)
 }
 
 func (h *Headers) Set(name, value string) {
@@ -88,7 +96,7 @@ func (h *Headers) Parse(data []byte) (int, bool, error) {
 			read += len(rn)
 			break
 		}
-		fmt.Printf("header: \"%s\"\n", string(data[read:idx]))
+		fmt.Printf("header: \"%s\"\n", string(data[read:read+idx]))
 		name, value, err := parseHeader(data[read : read+idx])
 		if err != nil {
 			return 0, false, err
