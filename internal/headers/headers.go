@@ -81,23 +81,23 @@ func (h *Headers) ForEach(cb func(n, v string)) {
 }
 
 func (h *Headers) Parse(data []byte) (int, bool, error) {
-	read := 0
+	from := 0
 	done := false
 
 	for {
-		idx := bytes.Index(data[read:], rn)
-		fmt.Printf("parsing header (%d) - %d\n", read, idx)
-		if idx == -1 {
+		to := bytes.Index(data[from:], rn)
+		fmt.Printf("parsing header (%d) - %d\n", from, to)
+		if to == -1 {
 			break
 		}
 
-		if idx == 0 {
+		if to == 0 {
 			done = true
-			read += len(rn)
+			from += len(rn)
 			break
 		}
-		fmt.Printf("header: \"%s\"\n", string(data[read:read+idx]))
-		name, value, err := parseHeader(data[read : read+idx])
+		fmt.Printf("header: \"%s\"\n", string(data[from:from+to]))
+		name, value, err := parseHeader(data[from : from+to])
 		if err != nil {
 			return 0, false, err
 		}
@@ -106,8 +106,8 @@ func (h *Headers) Parse(data []byte) (int, bool, error) {
 			return 0, false, fmt.Errorf("bad header name")
 		}
 
-		read += idx + len(rn)
+		from += to + len(rn)
 		h.Set(name, value)
 	}
-	return read, done, nil
+	return from, done, nil
 }
