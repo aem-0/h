@@ -46,3 +46,14 @@ func TestHeaderParse(t *testing.T) {
 	assert.Equal(t, "localhost:42069,localhost:42069", value)
 	assert.False(t, done)
 }
+
+func TestIsToken(t *testing.T) {
+	assert.True(t, isToken([]byte("Host")))
+	assert.True(t, isToken([]byte("Content-Type")))
+	assert.True(t, isToken([]byte("X_Custom_Header")))
+
+	assert.False(t, isToken([]byte("")))
+	assert.False(t, isToken([]byte("Content Type")))
+	assert.False(t, isToken([]byte("Content:Type")))
+	assert.False(t, isToken([]byte("Content@Type")))
+}

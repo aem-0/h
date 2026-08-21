@@ -7,6 +7,9 @@ import (
 )
 
 func isToken(str []byte) bool {
+	if len(str) == 0 {
+		return false
+	}
 	for _, ch := range str {
 		switch {
 		case ch >= 'A' && ch <= 'Z', ch >= 'a' && ch <= 'z', ch >= '0' && ch <= '9':
