@@ -57,3 +57,53 @@ func TestIsToken(t *testing.T) {
 	assert.False(t, isToken([]byte("Content:Type")))
 	assert.False(t, isToken([]byte("Content@Type")))
 }
+
+func TestParseHeaderFieldName(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		Err   bool
+	}{
+		{
+			name:  "valid header",
+			input: "Host: localhost\r\n",
+			Err:   false,
+		},
+		{
+			name:  "space before field name",
+			input: " Host: localhost\r\n",
+			Err:   true,
+		},
+		{
+			name:  "tab before field name",
+			input: "\tHost: localhost\r\n",
+			Err:   true,
+		},
+		{
+			name:  "invalid character",
+			input: "Ho@st: localhost\r\n",
+			Err:   true,
+		},
+		{
+			name:  "empty field name",
+			input: ": localhost\r\n",
+			Err:   true,
+		},
+		{
+			name:  "space before colon",
+			input: "Host : localhost\r\n",
+			Err:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := parseHeader([]byte(tt.input))
+			if tt.Err {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}

@@ -36,7 +36,7 @@ func parseHeader(fieldLine []byte) (string, string, error) {
 
 	name := parts[0]
 	value := bytes.TrimSpace(parts[1])
-	if bytes.HasSuffix(name, []byte(" ")) {
+	if !isToken(name) {
 		return "", "", fmt.Errorf("bad field name")
 	}
 
