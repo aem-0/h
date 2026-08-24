@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"strconv"
 
 	"github.com/aem-0/h/internal/headers"
 )
@@ -17,12 +18,37 @@ type RequestLine struct {
 type Request struct {
 	RequestLine RequestLine
 	Headers     headers.Headers
+	Body        string
 	state       parserState
+}
+
+func getContentLength(h *headers.Headers) (int, bool, error) {
+	values, exists := h.Get("Content-Length")
+	if !exists {
+		return 0, false, nil
+	}
+
+	if len(values) != 1 {
+		return 0, false, fmt.Errorf("multiple Content-Length headers")
+	}
+
+	length, err := strconv.Atoi(values[0])
+	if err != nil {
+		return 0, false, fmt.Errorf("invalid Content-Length")
+	}
+
+	if length < 0 {
+		return 0, false, fmt.Errorf("negative Content-Length")
+	}
+
+	return length, true, nil
 }
 
 func newRequest() *Request {
 	return &Request{
-		state: StateInit,
+		state:   StateInit,
+		Headers: *headers.NewHeaders(),
+		Body:    "",
 	}
 }
 
@@ -37,6 +63,7 @@ type parserState string
 const (
 	StateInit    parserState = "init"
 	StateHeaders parserState = "headers"
+	StateBody    parserState = "body"
 	StateDone    parserState = "done"
 	StateError   parserState = "error"
 )
@@ -69,11 +96,23 @@ func parseRequestLine(b []byte) (*RequestLine, int, error) {
 	return rl, read, nil
 }
 
+func (r *Request) hasBody() (bool, error) {
+	length, exists, err := getContentLength(&r.Headers)
+	if err != nil {
+		return false, err
+	}
+
+	return exists && length > 0, nil
+}
+
 func (r *Request) parse(data []byte) (int, error) {
 	read := 0
 outer:
 	for {
 		currentData := data[read:]
+		if len(currentData) == 0 {
+			break outer
+		}
 		switch r.state {
 		case StateError:
 			return 0, ErrorRequestInErrorState
@@ -92,6 +131,7 @@ outer:
 		case StateHeaders:
 			n, done, err := r.Headers.Parse(currentData)
 			if err != nil {
+				r.state = StateError
 				return 0, err
 			}
 			if n == 0 {
@@ -100,6 +140,34 @@ outer:
 			read += n
 
 			if done {
+				hasBody, err := r.hasBody()
+				if err != nil {
+					r.state = StateError
+					return 0, err
+				}
+
+				if hasBody {
+					r.state = StateBody
+				} else {
+					r.state = StateDone
+				}
+			}
+		case StateBody:
+			length, exists, err := getContentLength(&r.Headers)
+			if err != nil {
+				r.state = StateError
+				return 0, err
+			}
+
+			if !exists || length == 0 {
+				r.state = StateDone
+				break
+			}
+
+			remaining := min(length-len(r.Body), len(currentData))
+			r.Body += string(currentData[:remaining])
+			read += remaining
+			if len(r.Body) == length {
 				r.state = StateDone
 			}
 		case StateDone:

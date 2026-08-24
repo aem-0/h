@@ -1,10 +1,11 @@
 package request
 
 import (
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"io"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type chunkReader struct {
@@ -55,6 +56,145 @@ func TestRequestLineParse(t *testing.T) {
 	assert.Equal(t, "1.1", r.RequestLine.HttpVersion)
 }
 
+func TestParseRequestLine(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		wantMethod  string
+		wantTarget  string
+		wantVersion string
+		wantRead    int
+		wantErr     error
+	}{
+		{
+			name:        "valid GET request",
+			input:       "GET / HTTP/1.1\r\n",
+			wantMethod:  "GET",
+			wantTarget:  "/",
+			wantVersion: "1.1",
+			wantRead:    len("GET / HTTP/1.1\r\n"),
+		},
+		{
+			name:        "valid request with path",
+			input:       "GET /coffee HTTP/1.1\r\n",
+			wantMethod:  "GET",
+			wantTarget:  "/coffee",
+			wantVersion: "1.1",
+			wantRead:    len("GET /coffee HTTP/1.1\r\n"),
+		},
+		{
+			name:    "unsupported HTTP version",
+			input:   "GET / HTTP/1.0\r\n",
+			wantErr: ErrorUnsupportedHttpVersion,
+		},
+		{
+			name:    "invalid request line",
+			input:   "GET /\r\n",
+			wantErr: ErrorBadStartLine,
+		},
+		{
+			name:  "incomplete request line",
+			input: "GET / HTTP/1.1",
+		},
+		{
+			name:    "multiple spaces between method and target",
+			input:   "GET  / HTTP/1.1\r\n",
+			wantErr: ErrorBadStartLine,
+		},
+		{
+			name:    "extra data after HTTP version",
+			input:   "GET / HTTP/1.1 extra\r\n",
+			wantErr: ErrorBadStartLine,
+		},
+		{
+			name:    "leading space",
+			input:   " GET / HTTP/1.1\r\n",
+			wantErr: ErrorBadStartLine,
+		},
+		{
+			name:    "trailing space",
+			input:   "GET / HTTP/1.1 \r\n",
+			wantErr: ErrorBadStartLine,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			line, n, err := parseRequestLine([]byte(tt.input))
+
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
+
+			if tt.wantMethod == "" {
+				assert.Nil(t, line)
+				assert.Equal(t, 0, n)
+				return
+			}
+
+			require.NotNil(t, line)
+			assert.Equal(t, tt.wantMethod, line.Method)
+			assert.Equal(t, tt.wantTarget, line.RequestTarget)
+			assert.Equal(t, tt.wantVersion, line.HttpVersion)
+			assert.Equal(t, tt.wantRead, n)
+		})
+	}
+}
+
+func TestContentLength(t *testing.T) {
+	tests := []struct {
+		name          string
+		contentLength string
+		wantBody      bool
+		wantErr       bool
+	}{
+		{
+			name:          "positive content length",
+			contentLength: "10",
+			wantBody:      true,
+		},
+		{
+			name:          "zero content length",
+			contentLength: "0",
+			wantBody:      false,
+		},
+		{
+			name:          "missing content length",
+			contentLength: "",
+			wantBody:      false,
+		},
+		{
+			name:          "invalid content length",
+			contentLength: "banana",
+			wantErr:       true,
+		},
+		{
+			name:          "negative content length",
+			contentLength: "-10",
+			wantErr:       true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newRequest()
+
+			if tt.contentLength != "" {
+				r.Headers.Set("Content-Length", tt.contentLength)
+			}
+			ex, err := r.hasBody()
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantBody, ex)
+		})
+	}
+}
 func TestParseHeaders(t *testing.T) {
 	// Test: Standard Headers
 	reader := &chunkReader{
@@ -64,9 +204,18 @@ func TestParseHeaders(t *testing.T) {
 	r, err := RequestFromReader(reader)
 	require.NoError(t, err)
 	require.NotNil(t, r)
-	assert.Equal(t, "localhost:42069", r.Headers.Get("host"))
-	assert.Equal(t, "curl/7.81.0", r.Headers.Get("user-agent"))
-	assert.Equal(t, "*/*", r.Headers.Get("accept"))
+
+	value, exists := r.Headers.Get("Host")
+	require.True(t, exists)
+	assert.Equal(t, []string{"localhost:42069"}, value)
+
+	value, exists = r.Headers.Get("user-agent")
+	require.True(t, exists)
+	assert.Equal(t, []string{"curl/7.81.0"}, value)
+
+	value, exists = r.Headers.Get("accept")
+	require.True(t, exists)
+	assert.Equal(t, []string{"*/*"}, value)
 
 	// Test: Malformed Header
 	reader = &chunkReader{
@@ -77,3 +226,30 @@ func TestParseHeaders(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestParseBody(t *testing.T) {
+	// Test: Standard Body
+	reader := &chunkReader{
+		data: "POST /submit HTTP/1.1\r\n" +
+			"Host: localhost:42069\r\n" +
+			"Content-Length: 13\r\n" +
+			"\r\n" +
+			"hello world!\n",
+		numBytesPerRead: 3,
+	}
+	r, err := RequestFromReader(reader)
+	require.NoError(t, err)
+	require.NotNil(t, r)
+	assert.Equal(t, "hello world!\n", string(r.Body))
+
+	// Test: Body shorter than reported content length
+	reader = &chunkReader{
+		data: "POST /submit HTTP/1.1\r\n" +
+			"Host: localhost:42069\r\n" +
+			"Content-Length: 20\r\n" +
+			"\r\n" +
+			"partial content",
+		numBytesPerRead: 3,
+	}
+	r, err = RequestFromReader(reader)
+	require.Error(t, err)
+}
