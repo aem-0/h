@@ -14,9 +14,10 @@ func TestHeaderParse(t *testing.T) {
 	n, done, err := headers.Parse(data)
 	require.NoError(t, err)
 	require.NotNil(t, headers)
-	value, exists := headers.Get("HOST")
-	assert.True(t, exists)
-	assert.Equal(t, "localhost:42069", value)
+	values, exists := headers.Get("HOST")
+	require.True(t, exists)
+	require.Len(t, values, 1)
+	assert.Equal(t, "localhost:42069", values[0])
 	assert.Equal(t, 23, n)
 	assert.False(t, done)
 
@@ -41,9 +42,9 @@ func TestHeaderParse(t *testing.T) {
 	n, done, err = headers.Parse(data)
 	require.NoError(t, err)
 	require.NotNil(t, headers)
-	value, exists = headers.Get("HOST")
-	assert.True(t, exists)
-	assert.Equal(t, "localhost:42069,localhost:42069", value)
+	values, exists = headers.Get("HOST")
+	require.True(t, exists)
+	assert.Equal(t, []string{"localhost:42069", "localhost:42069"}, values)
 	assert.False(t, done)
 }
 
@@ -104,6 +105,116 @@ func TestParseHeaderFieldName(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 			}
+		})
+	}
+}
+
+func TestHeadersSet(t *testing.T) {
+	tests := []struct {
+		name           string
+		initialValues  []string
+		newValue       string
+		expectedValues []string
+	}{
+		{
+			name:           "sets new header",
+			initialValues:  nil,
+			newValue:       "localhost",
+			expectedValues: []string{"localhost"},
+		},
+		{
+			name:           "replaces existing value",
+			initialValues:  []string{"localhost"},
+			newValue:       "example.com",
+			expectedValues: []string{"example.com"},
+		},
+		{
+			name:           "replaces multiple existing values",
+			initialValues:  []string{"localhost", "example.com"},
+			newValue:       "api.example.com",
+			expectedValues: []string{"api.example.com"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := NewHeaders()
+
+			for _, value := range tt.initialValues {
+				h.Add("Host", value)
+			}
+
+			h.Set("Host", tt.newValue)
+
+			values, exists := h.Get("Host")
+
+			require.True(t, exists)
+			assert.Equal(t, tt.expectedValues, values)
+		})
+	}
+}
+
+func TestHeadersAdd(t *testing.T) {
+	tests := []struct {
+		name           string
+		values         []string
+		expectedValues []string
+	}{
+		{
+			name:           "adds first value",
+			values:         []string{"localhost"},
+			expectedValues: []string{"localhost"},
+		},
+		{
+			name:           "adds multiple values",
+			values:         []string{"localhost", "example.com"},
+			expectedValues: []string{"localhost", "example.com"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := NewHeaders()
+
+			for _, value := range tt.values {
+				h.Add("Host", value)
+			}
+
+			values, exists := h.Get("Host")
+
+			require.True(t, exists)
+			assert.Equal(t, tt.expectedValues, values)
+		})
+	}
+}
+func TestHeadersDelete(t *testing.T) {
+	tests := []struct {
+		name       string
+		headerName string
+		deleteName string
+	}{
+		{
+			name:       "deletes existing header",
+			headerName: "Host",
+			deleteName: "Host",
+		},
+		{
+			name:       "delete is case insensitive",
+			headerName: "Content-Type",
+			deleteName: "CONTENT-TYPE",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := NewHeaders()
+
+			h.Set(tt.headerName, "some-value")
+			h.Delete(tt.deleteName)
+
+			_, exists := h.Get(tt.headerName)
+
+			assert.False(t, exists)
 		})
 	}
 }

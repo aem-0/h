@@ -44,23 +44,23 @@ func parseHeader(fieldLine []byte) (string, string, error) {
 }
 
 type Headers struct {
-	headers map[string]string
+	headers map[string][]string
 }
 
 func NewHeaders() *Headers {
 	return &Headers{
-		headers: map[string]string{},
+		headers: map[string][]string{},
 	}
 }
 
-func (h *Headers) Get(name string) (string, bool) {
-	str, ok := h.headers[strings.ToLower(name)]
-	return str, ok
+func (h *Headers) Get(name string) ([]string, bool) {
+	values, ok := h.headers[strings.ToLower(name)]
+	return values, ok
 }
 
-func (h *Headers) Replace(name, value string) {
+func (h *Headers) Add(name, value string) {
 	name = strings.ToLower(name)
-	h.headers[name] = value
+	h.headers[name] = append(h.headers[name], value)
 }
 
 func (h *Headers) Delete(name string) {
@@ -70,16 +70,14 @@ func (h *Headers) Delete(name string) {
 
 func (h *Headers) Set(name, value string) {
 	name = strings.ToLower(name)
-	if v, ok := h.headers[name]; ok {
-		h.headers[name] = fmt.Sprintf("%s,%s", v, value)
-	} else {
-		h.headers[strings.ToLower(name)] = value
-	}
+	h.headers[name] = []string{value}
 }
 
 func (h *Headers) ForEach(cb func(n, v string)) {
-	for n, v := range h.headers {
-		cb(n, v)
+	for n, values := range h.headers {
+		for _, value := range values {
+			cb(n, value)
+		}
 	}
 }
 
@@ -89,7 +87,7 @@ func (h *Headers) Parse(data []byte) (int, bool, error) {
 
 	for {
 		to := bytes.Index(data[from:], rn)
-		fmt.Printf("parsing header (%d) - %d\n", from, to)
+		fmt.Printf(" (%d) - %d\n", from, to)
 		if to == -1 {
 			break
 		}
@@ -110,7 +108,7 @@ func (h *Headers) Parse(data []byte) (int, bool, error) {
 		}
 
 		from += to + len(rn)
-		h.Set(name, value)
+		h.Add(name, value)
 	}
 	return from, done, nil
 }
