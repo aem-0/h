@@ -7,9 +7,6 @@ import (
 	"github.com/aem-0/h/internal/headers"
 )
 
-type Response struct {
-}
-
 type StatusCode int
 
 const (
